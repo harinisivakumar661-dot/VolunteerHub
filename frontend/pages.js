@@ -31,51 +31,120 @@ export function getState() { return appState }
 export function setState(key, value) { appState[key] = value }
 
 // ===== Helpers =====
+
+function getEventId(event) {
+  return event?.eventId ?? event?.id;
+}
+
+function getVolunteerId(volunteer) {
+  return volunteer?.volunteerId ?? volunteer?.id;
+}
+
+function getEventCapacity(event) {
+  return Number(event?.volunteerCapacity ?? event?.capacity ?? 0);
+}
+
 export function getRegisteredCount(eventId) {
-  return appState.signups.filter(
-    (s) => String(s.eventId || s.event?.id) === String(eventId) && (s.status || '').toUpperCase() !== 'CANCELLED'
-  ).length
+  return appState.signups.filter((signup) => {
+    const signupEventId =
+      signup?.event?.eventId ??
+      signup?.event?.id ??
+      signup?.eventId;
+
+    const status = (signup?.status || '').toUpperCase();
+
+    return (
+      String(signupEventId) === String(eventId) &&
+      status === 'REGISTERED'
+    );
+  }).length;
 }
 
 export function getAvailableSlots(event) {
-  const eventId = event.id || event.eventId
-  const registered = getRegisteredCount(eventId)
-  const capacity = event.capacity || 0
-  return Math.max(0, capacity - registered)
+  const capacity = getEventCapacity(event);
+  const registered = getRegisteredCount(getEventId(event));
+
+  return Math.max(0, capacity - registered);
 }
 
 export function getVolunteerName(signup) {
-  if (signup.volunteerName) return signup.volunteerName
-  if (signup.volunteer) return `${signup.volunteer.firstName || ''} ${signup.volunteer.lastName || ''}`.trim() || signup.volunteer.name || '-'
-  const v = appState.volunteers.find((v) => String(v.id) === String(signup.volunteerId))
-  if (v) return `${v.firstName || ''} ${v.lastName || ''}`.trim() || v.name || '-'
-  return '-'
+  if (signup?.volunteer?.name) {
+    return signup.volunteer.name;
+  }
+
+  if (signup?.volunteerName) {
+    return signup.volunteerName;
+  }
+
+  const volunteerId =
+    signup?.volunteer?.volunteerId ??
+    signup?.volunteer?.id ??
+    signup?.volunteerId;
+
+  const volunteer = appState.volunteers.find(
+    (v) => String(getVolunteerId(v)) === String(volunteerId)
+  );
+
+  return volunteer?.name || '-';
 }
 
 export function getEventName(signup) {
-  if (signup.eventName) return signup.eventName
-  if (signup.event) return signup.event.name || signup.event.eventName || '-'
-  const e = appState.events.find((e) => String(e.id) === String(signup.eventId))
-  if (e) return e.name || e.eventName || '-'
-  return '-'
+  if (signup?.event?.eventName) {
+    return signup.event.eventName;
+  }
+
+  if (signup?.eventName) {
+    return signup.eventName;
+  }
+
+  const eventId =
+    signup?.event?.eventId ??
+    signup?.event?.id ??
+    signup?.eventId;
+
+  const event = appState.events.find(
+    (e) => String(getEventId(e)) === String(eventId)
+  );
+
+  return event?.eventName || '-';
 }
 
 function getVolunteerSignupCount(volunteerId) {
-  return appState.signups.filter(
-    (s) => String(s.volunteerId || s.volunteer?.id) === String(volunteerId) && (s.status || '').toUpperCase() !== 'CANCELLED'
-  ).length
+  return appState.signups.filter((signup) => {
+    const signupVolunteerId =
+      signup?.volunteer?.volunteerId ??
+      signup?.volunteer?.id ??
+      signup?.volunteerId;
+
+    const status = (signup?.status || '').toUpperCase();
+
+    return (
+      String(signupVolunteerId) === String(volunteerId) &&
+      status === 'REGISTERED'
+    );
+  }).length;
 }
 
 function getEventStatus(event) {
-  const registered = getRegisteredCount(event.id || event.eventId)
-  const capacity = event.capacity || 0
-  const eventDate = new Date(event.date || event.eventDate || 0)
-  const now = new Date()
-  if (capacity > 0 && registered >= capacity) return 'FULL'
-  if (eventDate < now && eventDate.getTime() > 0) return 'COMPLETED'
-  return 'UPCOMING'
-}
+  const registered = getRegisteredCount(getEventId(event));
+  const capacity = getEventCapacity(event);
 
+  const eventDate = new Date(event?.eventDate || 0);
+  const now = new Date();
+
+  if (capacity > 0 && registered >= capacity) {
+    return 'FULL';
+  }
+
+  if (
+    eventDate.getTime() > 0 &&
+    eventDate < now
+  ) {
+    return 'COMPLETED';
+  }
+
+  return 'UPCOMING';
+}
 // ===== DASHBOARD ======
 export async function renderDashboard(container) {
   container.innerHTML = `
@@ -100,8 +169,12 @@ export async function renderDashboard(container) {
     const totalSignups = signups.length
     const now = new Date()
     const upcomingEvents = events
-      .filter((e) => new Date(e.date || e.eventDate || e.startDate || 0) >= now)
-      .sort((a, b) => new Date(a.date || a.eventDate || 0) - new Date(b.date || b.eventDate || 0))
+  .filter((e) => new Date(e.eventDate || 0) >= now)
+  .sort(
+    (a, b) =>
+      new Date(a.eventDate || 0) -
+      new Date(b.eventDate || 0)
+  )
     const totalHours = attendance.filter((a) => a.attended === true).reduce((sum, a) => sum + (a.hoursContributed || 0), 0)
     const openSlots = events.reduce((sum, e) => sum + getAvailableSlots(e), 0)
 
@@ -211,10 +284,17 @@ function renderKpiCards({ totalEvents, totalVolunteers, totalSignups, totalHours
   `).join('')}</div>`
 }
 
+
+
 function renderUpcomingEvents(upcomingEvents) {
   if (upcomingEvents.length === 0) {
-    return emptyState('No upcoming events', 'Create your first event to start managing volunteers.', 'events')
+    return emptyState(
+      'No upcoming events',
+      'Create your first event to start managing volunteers.',
+      'events'
+    );
   }
+
   return `
     <div class="table-wrapper">
       <table class="data-table">
@@ -228,59 +308,118 @@ function renderUpcomingEvents(upcomingEvents) {
             <th>Status</th>
           </tr>
         </thead>
+
         <tbody>
-          ${upcomingEvents.slice(0, 6).map((e) => {
-            const registered = getRegisteredCount(e.id || e.eventId)
-            const available = getAvailableSlots(e)
-            const status = getEventStatus(e)
+          ${upcomingEvents.slice(0, 6).map((event) => {
+
+            const registered =
+              getRegisteredCount(getEventId(event));
+
+            const capacity =
+              getEventCapacity(event);
+
+            const available =
+              getAvailableSlots(event);
+
+            const status =
+              getEventStatus(event);
+
             return `
-            <tr>
-              <td>
-                <div class="cell-primary">${esc(e.name || e.eventName || '-')}</div>
-              </td>
-              <td><span class="cell-date">${formatDate(e.date || e.eventDate)}</span></td>
-              <td>
-                <div class="cell-location">${icon('mapPin', 'cell-icon')}${esc(e.location || '-')}</div>
-              </td>
-              <td style="min-width:140px">${capacityBar(registered, e.capacity || 0)}</td>
-              <td><span class="slot-pill ${available === 0 ? 'slot-pill-full' : ''}">${available} slots</span></td>
-              <td>${statusBadge(status)}</td>
-            </tr>
-          `}).join('')}
+              <tr>
+
+                <td>
+                  <div class="cell-primary">
+                    ${esc(event.eventName || '-')}
+                  </div>
+                </td>
+
+                <td>
+                  <span class="cell-date">
+                    ${formatDate(event.eventDate)}
+                  </span>
+                </td>
+
+                <td>
+                  <div class="cell-location">
+                    ${icon('mapPin', 'cell-icon')}
+                    ${esc(event.location || '-')}
+                  </div>
+                </td>
+
+                <td style="min-width:140px">
+                  ${capacityBar(registered, capacity)}
+                </td>
+
+                <td>
+                  <span class="slot-pill ${available === 0 ? 'slot-pill-full' : ''}">
+                    ${available} slots
+                  </span>
+                </td>
+
+                <td>
+                  ${statusBadge(status)}
+                </td>
+
+              </tr>
+            `;
+          }).join('')}
         </tbody>
       </table>
     </div>
-  `
-}
+  `;
 
+}
 function renderRecentActivity() {
-  const activities = []
+  const activities = [];
 
   // New events
   appState.events.forEach((e) => {
-    activities.push({ type: 'event', text: `Event "${esc(e.name || e.eventName || 'Unnamed')}" created`, date: e.createdAt || e.date || e.eventDate, icon: 'events', badge: 'NEW', badgeCls: 'badge-blue' })
-  })
+    activities.push({
+      type: 'event',
+      text: `Event "${esc(e.eventName || 'Unnamed')}" created`,
+      date: e.createdAt || e.eventDate,
+      icon: 'events',
+      badge: 'NEW',
+      badgeCls: 'badge-blue'
+    });
+  });
+
   // New volunteers
   appState.volunteers.forEach((v) => {
-    const name = `${v.firstName || ''} ${v.lastName || ''}`.trim() || v.name || 'Unknown'
-    activities.push({ type: 'volunteer', text: `${esc(name)} registered as volunteer`, date: v.createdAt || v.date, icon: 'userPlus', badge: 'NEW', badgeCls: 'badge-teal' })
-  })
+    activities.push({
+      type: 'volunteer',
+      text: `${esc(v.name || 'Unknown')} registered as volunteer`,
+      date: v.createdAt,
+      icon: 'userPlus',
+      badge: 'NEW',
+      badgeCls: 'badge-teal'
+    });
+  });
+
   // Signups
   appState.signups.forEach((s) => {
-    const isCancelled = (s.status || '').toUpperCase() === 'CANCELLED'
+    const isCancelled =
+      (s.status || '').toUpperCase() === 'CANCELLED';
+
     activities.push({
       type: 'signup',
       text: `${esc(getVolunteerName(s))} signed up for ${esc(getEventName(s))}`,
-      date: s.signupDate || s.createdAt || s.date,
+      date: s.signupDate,
       icon: isCancelled ? 'userX' : 'signups',
       badge: isCancelled ? 'CANCELLED' : 'REGISTERED',
-      badgeCls: isCancelled ? 'badge-red' : 'badge-blue',
-    })
-  })
+      badgeCls: isCancelled ? 'badge-red' : 'badge-blue'
+    });
+  });
+
   // Attendance
   appState.attendance.forEach((a) => {
-    const signupId = a.signupId || (a.signup && a.signup.id)
-    const signup = appState.signups.find((s) => String(s.id || s.signupId) === String(signupId))
+    const signupId =
+      a.signup?.signupId ?? a.signupId;
+
+    const signup = appState.signups.find(
+  (s) => String(s.signupId ?? s.id) === String(signupId)
+)
+
     if (signup) {
       activities.push({
         type: 'attendance',
@@ -288,35 +427,56 @@ function renderRecentActivity() {
         date: a.date || a.createdAt,
         icon: 'userCheck',
         badge: a.attended ? 'ATTENDED' : 'MISSED',
-        badgeCls: a.attended ? 'badge-green' : 'badge-red',
-      })
+        badgeCls: a.attended ? 'badge-green' : 'badge-red'
+      });
     }
-  })
+  });
 
-  // Sort by date desc, take 6
-  activities.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
-  const recent = activities.slice(0, 6)
+  // Sort newest first
+  activities.sort(
+    (a, b) =>
+      new Date(b.date || 0) -
+      new Date(a.date || 0)
+  );
+
+  const recent = activities.slice(0, 6);
 
   if (recent.length === 0) {
-    return emptyState('No recent activity', 'Activity will appear here as data is added.', 'activity')
+    return emptyState(
+      'No recent activity',
+      'Activity will appear here as data is added.',
+      'activity'
+    );
   }
 
   return `
     <div class="activity-list">
       ${recent.map((a) => `
         <div class="activity-item">
-          <div class="activity-icon activity-${a.badgeCls}">${icon(a.icon)}</div>
-          <div class="activity-content">
-            <div class="activity-text">${a.text}</div>
-            <div class="activity-time">${a.date ? formatTimeAgo(a.date) : ''}</div>
+
+          <div class="activity-icon activity-${a.badgeCls}">
+            ${icon(a.icon)}
           </div>
-          <span class="status-badge ${a.badgeCls}">${a.badge}</span>
+
+          <div class="activity-content">
+            <div class="activity-text">
+              ${a.text}
+            </div>
+
+            <div class="activity-time">
+              ${a.date ? formatTimeAgo(a.date) : ''}
+            </div>
+          </div>
+
+          <span class="status-badge ${a.badgeCls}">
+            ${a.badge}
+          </span>
+
         </div>
       `).join('')}
     </div>
-  `
+  `;
 }
-
 // ===== CSS Charts =====
 function renderHoursChart(attendance) {
   const attendedRecords = attendance.filter((a) => a.attended === true)
@@ -522,8 +682,10 @@ function renderEventsTable() {
               <td><div class="cell-primary">${esc(e.name || e.eventName || '-')}</div></td>
               <td><div class="cell-location">${icon('mapPin', 'cell-icon')}${esc(e.location || '-')}</div></td>
               <td><span class="cell-date">${formatDate(e.date || e.eventDate)}</span></td>
-              <td>${e.capacity || 0}</td>
-              <td style="min-width:130px">${capacityBar(registered, e.capacity || 0)}</td>
+              <td>${e.volunteerCapacity || 0}</td>
+<td style="min-width:130px">
+  ${capacityBar(registered, e.volunteerCapacity || 0)}
+</td>
               <td><span class="slot-pill ${available === 0 ? 'slot-pill-full' : ''}">${available}</span></td>
               <td>${statusBadge(status)}</td>
               <td class="actions-cell">
@@ -604,7 +766,12 @@ async function saveEvent(isEdit, id) {
     return
   }
 
-  const payload = { name, location, date, capacity, description }
+  const payload = {
+  eventName: name,
+  location: location,
+  eventDate: date,
+  volunteerCapacity: capacity
+}
   const saveBtn = document.getElementById('modal-save')
   saveBtn.disabled = true
   saveBtn.innerHTML = '<span class="btn-spinner"></span> Saving...'
@@ -723,7 +890,7 @@ function renderVolunteersTable() {
           ${filtered.map((v) => {
             const name = `${v.firstName || ''} ${v.lastName || ''}`.trim() || v.name || '-'
             const initials = name.split(' ').map((w) => w[0] || '').join('').substring(0, 2).toUpperCase()
-            const signupCount = getVolunteerSignupCount(v.id)
+            const signupCount = getVolunteerSignupCount(v.volunteerId)
             return `
             <tr>
               <td>
@@ -953,9 +1120,9 @@ function showSignupForm() {
   }).join('')
 
   const volunteerOptions = volunteers.map((v) => {
-    const name = `${v.firstName || ''} ${v.lastName || ''}`.trim() || v.name || '-'
-    return `<option value="${v.id}">${esc(name)}</option>`
-  }).join('')
+  const name = v.name || '-'
+  return `<option value="${v.volunteerId}">${esc(name)}</option>`
+}).join('')
 
   openModal(
     'Create New Signup',
@@ -993,7 +1160,10 @@ async function saveSignup() {
     return
   }
 
-  const event = appState.events.find((e) => String(e.id || e.eventId) === String(eventId))
+  const event = appState.events.find(
+    (e) => String(e.eventId ?? e.id) === String(eventId)
+  )
+
   if (event && getAvailableSlots(event) === 0) {
     showToast('Event capacity is full. Signup rejected.', 'error')
     return
@@ -1004,18 +1174,23 @@ async function saveSignup() {
   saveBtn.innerHTML = '<span class="btn-spinner"></span> Saving...'
 
   try {
+    console.log('Signup Request:', {
+      eventId,
+      volunteerId
+    })
+
     await api.createSignup(eventId, volunteerId)
+
     showToast('Signup created successfully.')
     closeModal()
     await loadAllData()
     renderSignupsTable()
   } catch (e) {
-    showToast(e.message || 'Event capacity is full. Signup rejected.', 'error')
+    showToast(e.message || 'Signup failed.', 'error')
     saveBtn.disabled = false
     saveBtn.textContent = 'Create Signup'
   }
 }
-
 async function cancelSignupAction(id) {
   openModal('Cancel Signup', `
     <div class="confirm-dialog">
@@ -1076,16 +1251,22 @@ function renderAttendanceTable() {
     return
   }
 
-  const signupIdsWithAttendance = new Set(attendance.map((a) => String(a.signupId || (a.signup && a.signup.id))))
-  const signupsWithoutAttendance = signups.filter(
-    (s) => (s.status || 'REGISTERED').toUpperCase() !== 'CANCELLED' &&
-            !signupIdsWithAttendance.has(String(s.id || s.signupId))
+ const signupIdsWithAttendance = new Set(
+  attendance.map((a) =>
+    String(a.signUp?.signupId ?? a.signupId)
   )
+)
+
+const signupsWithoutAttendance = signups.filter(
+  (s) => (s.status || 'REGISTERED').toUpperCase() !== 'CANCELLED' &&
+          !signupIdsWithAttendance.has(String(s.signupId ?? s.id))
+)
 
   let rowsHtml
   if (attendance.length > 0) {
     rowsHtml = attendance.map((a) => {
-      const signupId = a.signupId || (a.signup && a.signup.id)
+      const signupId =
+  a.signUp?.signupId ?? a.signupId
       const signup = appState.signups.find((s) => String(s.id || s.signupId) === String(signupId))
       const event = signup ? getEventName(signup) : '-'
       const volunteer = signup ? getVolunteerName(signup) : '-'
@@ -1103,8 +1284,8 @@ function renderAttendanceTable() {
           <td>${attended ? `<span class="att-yes">${icon('check', 'att-icon')} Yes</span>` : `<span class="att-no">${icon('x', 'att-icon')} No</span>`}</td>
           <td><span class="hours-pill">${a.hoursContributed || 0}h</span></td>
           <td class="actions-cell">
-            <button class="btn-icon btn-edit" data-edit-id="${a.id}" title="Edit">${icon('edit')}</button>
-            <button class="btn-icon btn-delete" data-delete-id="${a.id}" title="Delete">${icon('trash')}</button>
+            <button class="btn-icon btn-edit" data-edit-id="${a.attendanceId ?? a.id}" title="Edit">
+            <button class="btn-icon btn-delete" data-delete-id="${a.attendanceId ?? a.id}" title="Delete">${icon('trash')}</button>
           </td>
         </tr>
       `
@@ -1172,12 +1353,16 @@ function renderAttendanceTable() {
   }
 
   content.querySelectorAll('.btn-edit').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.editId
-      const att = appState.attendance.find((a) => String(a.id) === String(id))
-      showAttendanceForm(att)
-    })
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.editId
+
+    const att = appState.attendance.find(
+      (a) => String(a.attendanceId ?? a.id) === String(id)
+    )
+
+    showAttendanceForm(att)
   })
+})
   content.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', () => confirmDeleteAttendance(btn.dataset.deleteId))
   })
@@ -1258,7 +1443,10 @@ async function saveAttendance(isEdit, attendance, signupId) {
 
   try {
     if (isEdit) {
-      await api.updateAttendance(attendance.id, { attended, hoursContributed: hours })
+      await api.updateAttendance(
+  attendance.attendanceId ?? attendance.id,
+  { attended, hoursContributed: hours }
+)
       showToast('Attendance updated successfully.')
     } else {
       await api.createAttendance(signupId, attended, hours)
